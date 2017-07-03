@@ -234,14 +234,20 @@ Peer.prototype._setRemoteDescription = function (data) {
 
 Peer.prototype._addIceCandidate = function (candidate) {
   var self = this
+  candidate = new self._wrtc.RTCIceCandidate(candidate)
   try {
-    self._pc.addIceCandidate(
-      new self._wrtc.RTCIceCandidate(candidate),
-      noop,
-      function (err) { self._destroy(err) }
-    )
+    if (self._pc.addIceCandidate.length === 1) {
+      self._pc.addIceCandidate(candidate)
+      .catch(onError)
+    } else {
+      self._pc.addIceCandidate(candidate, noop, onError)
+    }
   } catch (err) {
     self._destroy(new Error('error adding candidate: ' + err.message))
+  }
+
+  function onError (err) {
+    self._destroy(err)
   }
 }
 
