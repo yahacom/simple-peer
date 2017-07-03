@@ -199,19 +199,36 @@ Peer.prototype.signal = function (data) {
     else self._pendingCandidates.push(data.candidate)
   }
   if (data.sdp) {
-    self._pc.setRemoteDescription(new (self._wrtc.RTCSessionDescription)(data), function () {
-      if (self.destroyed) return
-
-      self._pendingCandidates.forEach(function (candidate) {
-        self._addIceCandidate(candidate)
-      })
-      self._pendingCandidates = []
-
-      if (self._pc.remoteDescription.type === 'offer') self._createAnswer()
-    }, function (err) { self._destroy(err) })
+    self._setRemoteDescription(data)
   }
   if (!data.sdp && !data.candidate) {
     self._destroy(new Error('signal() called with invalid signal data'))
+  }
+}
+
+Peer.prototype._setRemoteDescription = function (data) {
+  var self = this
+  data = new (self._wrtc.RTCSessionDescription)(data)
+  if (self._pc.setRemoteDescription.length <= 1) {
+    self._pc.setRemoteDescription(data)
+    .then(onSuccess)
+    .catch(onError)
+  } else {
+    self._pc.setRemoteDescription(data, onSuccess, onError)
+  }
+  function onSuccess () {
+    if (self.destroyed) return
+
+    self._pendingCandidates.forEach(function (candidate) {
+      self._addIceCandidate(candidate)
+    })
+    self._pendingCandidates = []
+
+    if (self._pc.remoteDescription.type === 'offer') self._createAnswer()
+  }
+
+  function onError (err) {
+    self._destroy(err)
   }
 }
 
@@ -399,24 +416,44 @@ Peer.prototype._onFinish = function () {
   }
 }
 
+Peer.prototype._setLocalDescription = function (desc, callback) {
+  var self = this
+  if (self._pc.setLocalDescription.length <= 1) { // safari tech preview === 0
+    self._pc.setLocalDescription(desc)
+    .then(onSuccess)
+    .catch(onError)
+  } else {
+    self._pc.setLocalDescription(desc, onSuccess, onError) // deprecated
+  }
+
+  function onSuccess () {
+    if (self.destroyed) return
+    if (self.trickle || self._iceComplete) callback()
+    else self.once('_iceComplete', callback)
+  }
+
+  function onError (err) {
+    self._destroy(err)
+  }
+}
+
 Peer.prototype._createOffer = function () {
   var self = this
   if (self.destroyed) return
 
-  self._pc.createOffer(function (offer) {
+  var constraints = self.offerConstraints
+  if (self._pc.createOffer.length === 0) {
+    self._pc.createOffer(constraints)
+    .then(onSuccess)
+    .catch(onError)
+  } else {
+    self._pc.createOffer(constraints, onSuccess, onError)
+  }
+
+  function onSuccess (offer) {
     if (self.destroyed) return
     offer.sdp = self.sdpTransform(offer.sdp)
-    self._pc.setLocalDescription(offer, onSuccess, onError)
-
-    function onSuccess () {
-      if (self.destroyed) return
-      if (self.trickle || self._iceComplete) sendOffer()
-      else self.once('_iceComplete', sendOffer) // wait for candidates
-    }
-
-    function onError (err) {
-      self._destroy(err)
-    }
+    self._setLocalDescription(offer, sendOffer)
 
     function sendOffer () {
       var signal = self._pc.localDescription || offer
@@ -426,27 +463,30 @@ Peer.prototype._createOffer = function () {
         sdp: signal.sdp
       })
     }
-  }, function (err) { self._destroy(err) }, self.offerConstraints)
+  }
+
+  function onError (err) {
+    self._destroy(err)
+  }
 }
 
 Peer.prototype._createAnswer = function () {
   var self = this
   if (self.destroyed) return
 
-  self._pc.createAnswer(function (answer) {
+  var constraints = self.answerConstraints
+  if (self._pc.createAnswer.length === 0) {
+    self._pc.createAnswer(constraints)
+    .then(onSuccess)
+    .catch(onError)
+  } else {
+    self._pc.createAnswer(onSuccess, onError, constraints)
+  }
+
+  function onSuccess (answer) {
     if (self.destroyed) return
     answer.sdp = self.sdpTransform(answer.sdp)
-    self._pc.setLocalDescription(answer, onSuccess, onError)
-
-    function onSuccess () {
-      if (self.destroyed) return
-      if (self.trickle || self._iceComplete) sendAnswer()
-      else self.once('_iceComplete', sendAnswer)
-    }
-
-    function onError (err) {
-      self._destroy(err)
-    }
+    self._setLocalDescription(answer, sendAnswer)
 
     function sendAnswer () {
       var signal = self._pc.localDescription || answer
@@ -456,7 +496,11 @@ Peer.prototype._createAnswer = function () {
         sdp: signal.sdp
       })
     }
-  }, function (err) { self._destroy(err) }, self.answerConstraints)
+  }
+
+  function onError (err) {
+    self._destroy(err)
+  }
 }
 
 Peer.prototype._onIceStateChange = function () {
