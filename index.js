@@ -732,15 +732,31 @@ Peer.prototype._onIceCandidate = function (event) {
   if (self.destroyed) return
   if (event.candidate && self.trickle) {
     self.emit('signal', {
-      candidate: {
-        candidate: event.candidate.candidate,
-        sdpMLineIndex: event.candidate.sdpMLineIndex,
-        sdpMid: event.candidate.sdpMid
-      }
+      candidate: self._transformIceCandidate(event)
     })
   } else if (!event.candidate) {
     self._iceComplete = true
     self.emit('_iceComplete')
+  }
+}
+
+// HACK transforms ICE candidates from Safari Technology Preview R34 because
+// sdpMLineIndex is always 0. Prevents 'Mismatch between mid and level -
+// "video" is not the mid for level 0; "audio" is)' error when connecting to
+// other peer in Firefox
+Peer.prototype._transformIceCandidate = function (event) {
+  var self = this
+  var candidates = self._candidates = self._candidates || {}
+  var sdpMLineIndex = event.candidate.sdpMLineIndex
+  var sdpMid = event.candidate.sdpMid
+  while (sdpMLineIndex in candidates && candidates[sdpMLineIndex] !== sdpMid) {
+    sdpMLineIndex++
+  }
+  candidates[sdpMLineIndex] = sdpMid
+  return {
+    candidate: event.candidate.candidate,
+    sdpMLineIndex: sdpMLineIndex,
+    sdpMid: sdpMid
   }
 }
 
