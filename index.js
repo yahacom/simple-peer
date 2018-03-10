@@ -45,7 +45,6 @@ function Peer (opts) {
   self.sdpTransform = opts.sdpTransform || function (sdp) { return sdp }
   self.stream = opts.stream || false
   self.trickle = opts.trickle !== undefined ? opts.trickle : true
-  self._earlyMessage = null
 
   self.destroyed = false
   self.connected = false
@@ -195,14 +194,14 @@ Peer.prototype.signal = function (data) {
   self._debug('signal()')
 
   if (data.candidate) {
-    if (self._pc.remoteDescription) self._addIceCandidate(data.candidate)
+    if (self._pc.remoteDescription && self._pc.remoteDescription.type) self._addIceCandidate(data.candidate)
     else self._pendingCandidates.push(data.candidate)
   }
   if (data.sdp) {
     self._setRemoteDescription(data)
   }
   if (!data.sdp && !data.candidate) {
-    self._destroy(new Error('signal() called with invalid signal data'))
+    self.destroy(new Error('signal() called with invalid signal data'))
   }
 }
 
@@ -228,7 +227,7 @@ Peer.prototype._setRemoteDescription = function (data) {
   }
 
   function onError (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
@@ -243,39 +242,34 @@ Peer.prototype._addIceCandidate = function (candidate) {
       self._pc.addIceCandidate(candidate, noop, onError)
     }
   } catch (err) {
-    self._destroy(new Error('error adding candidate: ' + err.message))
+    self.destroy(new Error('error adding candidate: ' + err.message))
   }
 
   function onError (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
 /**
  * Send text/binary data to the remote peer.
- * @param {TypedArrayView|ArrayBuffer|Buffer|string|Blob|Object} chunk
+ * @param {ArrayBufferView|ArrayBuffer|Buffer|string|Blob} chunk
  */
 Peer.prototype.send = function (chunk) {
   var self = this
-
-  // HACK: `wrtc` module crashes on Node.js Buffer, so convert to Uint8Array
-  // See: https://github.com/feross/simple-peer/issues/60
-  if (self._isWrtc && Buffer.isBuffer(chunk)) {
-    chunk = new Uint8Array(chunk)
-  }
-
   self._channel.send(chunk)
 }
 
-Peer.prototype.destroy = function (onclose) {
+// TODO: Delete this method once readable-stream is updated to contain a default
+// implementation of destroy() that automatically calls _destroy()
+// See: https://github.com/nodejs/readable-stream/issues/283
+Peer.prototype.destroy = function (err) {
   var self = this
-  self._destroy(null, onclose)
+  self._destroy(err, function () {})
 }
 
-Peer.prototype._destroy = function (err, onclose) {
+Peer.prototype._destroy = function (err, cb) {
   var self = this
   if (self.destroyed) return
-  if (onclose) self.once('close', onclose)
 
   self._debug('destroy (error: %s)', err && (err.message || err))
 
@@ -289,7 +283,6 @@ Peer.prototype._destroy = function (err, onclose) {
   self._pcReady = false
   self._channelReady = false
   self._previousStreams = null
-  self._earlyMessage = null
 
   clearInterval(self._interval)
   clearTimeout(self._reconnectTimeout)
@@ -334,6 +327,7 @@ Peer.prototype._destroy = function (err, onclose) {
 
   if (err) self.emit('error', err)
   self.emit('close')
+  cb()
 }
 
 Peer.prototype._setupData = function (event) {
@@ -342,7 +336,7 @@ Peer.prototype._setupData = function (event) {
     // In some situations `pc.createDataChannel()` returns `undefined` (in wrtc),
     // which is invalid behavior. Handle it gracefully.
     // See: https://github.com/feross/simple-peer/issues/163
-    return self._destroy(new Error('Data channel event is missing `channel` property'))
+    return self.destroy(new Error('Data channel event is missing `channel` property'))
   }
 
   self._channel = event.channel
@@ -355,24 +349,19 @@ Peer.prototype._setupData = function (event) {
   self.channelName = self._channel.label
 
   self._channel.onmessage = function (event) {
-    if (!self._channelReady) { // HACK: Workaround for Chrome not firing "open" between tabs
-      self._earlyMessage = event
-      self._onChannelOpen()
-    } else {
-      self._onChannelMessage(event)
-    }
+    self._onChannelMessage(event)
   }
   self._channel.onbufferedamountlow = function () {
     self._onChannelBufferedAmountLow()
   }
   self._channel.onopen = function () {
-    if (!self._channelReady) self._onChannelOpen()
+    self._onChannelOpen()
   }
   self._channel.onclose = function () {
     self._onChannelClose()
   }
   self._channel.onerror = function (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
@@ -386,7 +375,7 @@ Peer.prototype._write = function (chunk, encoding, cb) {
     try {
       self.send(chunk)
     } catch (err) {
-      return self._destroy(err)
+      return self.destroy(err)
     }
     if (self._channel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
       self._debug('start backpressure: bufferedAmount %d', self._channel.bufferedAmount)
@@ -417,7 +406,7 @@ Peer.prototype._onFinish = function () {
   // TODO: is there a more reliable way to accomplish this?
   function destroySoon () {
     setTimeout(function () {
-      self._destroy()
+      self.destroy()
     }, 1000)
   }
 }
@@ -439,7 +428,7 @@ Peer.prototype._setLocalDescription = function (desc, callback) {
   }
 
   function onError (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
@@ -472,7 +461,7 @@ Peer.prototype._createOffer = function () {
   }
 
   function onError (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
@@ -505,7 +494,7 @@ Peer.prototype._createAnswer = function () {
   }
 
   function onError (err) {
-    self._destroy(err)
+    self.destroy(err)
   }
 }
 
@@ -532,17 +521,17 @@ Peer.prototype._onIceStateChange = function () {
       // If user has set `opt.reconnectTimer`, allow time for ICE to attempt a reconnect
       clearTimeout(self._reconnectTimeout)
       self._reconnectTimeout = setTimeout(function () {
-        self._destroy()
+        self.destroy()
       }, self.reconnectTimer)
     } else {
-      self._destroy()
+      self.destroy()
     }
   }
   if (iceConnectionState === 'failed') {
-    self._destroy(new Error('Ice connection failed.'))
+    self.destroy(new Error('Ice connection failed.'))
   }
   if (iceConnectionState === 'closed') {
-    self._destroy()
+    self.destroy()
   }
 }
 
@@ -572,6 +561,9 @@ Peer.prototype.getStats = function (cb) {
   // Single-parameter callback-based getStats() (non-standard)
   } else if (self._pc.getStats.length > 0) {
     self._pc.getStats(function (res) {
+      // If we destroy connection in `connect` callback this code might happen to run when actual connection is already closed
+      if (self.destroyed) return
+
       var reports = []
       res.result().forEach(function (result) {
         var report = {}
@@ -597,127 +589,141 @@ Peer.prototype._maybeReady = function () {
   var self = this
   self._debug('maybeReady pc %s channel %s', self._pcReady, self._channelReady)
   if (self.connected || self._connecting || !self._pcReady || !self._channelReady) return
+
   self._connecting = true
 
-  self.getStats(function (err, items) {
+  // HACK: We can't rely on order here, for details see https://github.com/js-platform/node-webrtc/issues/339
+  function findCandidatePair () {
     if (self.destroyed) return
 
-    // Treat getStats error as non-fatal. It's not essential.
-    if (err) items = []
+    self.getStats(function (err, items) {
+      if (self.destroyed) return
 
-    self._connecting = false
-    self.connected = true
+      // Treat getStats error as non-fatal. It's not essential.
+      if (err) items = []
 
-    var remoteCandidates = {}
-    var localCandidates = {}
-    var candidatePairs = {}
+      var remoteCandidates = {}
+      var localCandidates = {}
+      var candidatePairs = {}
+      var foundSelectedCandidatePair = false
 
-    items.forEach(function (item) {
-      // TODO: Once all browsers support the hyphenated stats report types, remove
-      // the non-hypenated ones
-      if (item.type === 'remotecandidate' || item.type === 'remote-candidate') {
-        remoteCandidates[item.id] = item
+      items.forEach(function (item) {
+        // TODO: Once all browsers support the hyphenated stats report types, remove
+        // the non-hypenated ones
+        if (item.type === 'remotecandidate' || item.type === 'remote-candidate') {
+          remoteCandidates[item.id] = item
+        }
+        if (item.type === 'localcandidate' || item.type === 'local-candidate') {
+          localCandidates[item.id] = item
+        }
+        if (item.type === 'candidatepair' || item.type === 'candidate-pair') {
+          candidatePairs[item.id] = item
+        }
+      })
+
+      items.forEach(function (item) {
+        // Spec-compliant
+        if (item.type === 'transport') {
+          setSelectedCandidatePair(candidatePairs[item.selectedCandidatePairId])
+        }
+
+        // Old implementations
+        if (
+          (item.type === 'googCandidatePair' && item.googActiveConnection === 'true') ||
+          ((item.type === 'candidatepair' || item.type === 'candidate-pair') && item.selected)
+        ) {
+          setSelectedCandidatePair(item)
+        }
+      })
+
+      function setSelectedCandidatePair (selectedCandidatePair) {
+        foundSelectedCandidatePair = true
+
+        var local = localCandidates[selectedCandidatePair.localCandidateId]
+
+        if (local && local.ip) {
+          // Spec
+          self.localAddress = local.ip
+          self.localPort = Number(local.port)
+        } else if (local && local.ipAddress) {
+          // Firefox
+          self.localAddress = local.ipAddress
+          self.localPort = Number(local.portNumber)
+        } else if (typeof selectedCandidatePair.googLocalAddress === 'string') {
+          // TODO: remove this once Chrome 58 is released
+          local = selectedCandidatePair.googLocalAddress.split(':')
+          self.localAddress = local[0]
+          self.localPort = Number(local[1])
+        }
+
+        var remote = remoteCandidates[selectedCandidatePair.remoteCandidateId]
+
+        if (remote && remote.ip) {
+          // Spec
+          self.remoteAddress = remote.ip
+          self.remotePort = Number(remote.port)
+        } else if (remote && remote.ipAddress) {
+          // Firefox
+          self.remoteAddress = remote.ipAddress
+          self.remotePort = Number(remote.portNumber)
+        } else if (typeof selectedCandidatePair.googRemoteAddress === 'string') {
+          // TODO: remove this once Chrome 58 is released
+          remote = selectedCandidatePair.googRemoteAddress.split(':')
+          self.remoteAddress = remote[0]
+          self.remotePort = Number(remote[1])
+        }
+        self.remoteFamily = 'IPv4'
+
+        self._debug(
+          'connect local: %s:%s remote: %s:%s',
+          self.localAddress, self.localPort, self.remoteAddress, self.remotePort
+        )
       }
-      if (item.type === 'localcandidate' || item.type === 'local-candidate') {
-        localCandidates[item.id] = item
+
+      // Ignore candidate pair selection in browsers like Safari 11 that do not have any local or remote candidates
+      // But wait until at least 1 candidate pair is available
+      if (!foundSelectedCandidatePair && (!Object.keys(candidatePairs).length || Object.keys(localCandidates).length)) {
+        setTimeout(findCandidatePair, 100)
+        return
+      } else {
+        self._connecting = false
+        self.connected = true
       }
-      if (item.type === 'candidatepair' || item.type === 'candidate-pair') {
-        candidatePairs[item.id] = item
+
+      if (self._chunk) {
+        try {
+          self.send(self._chunk)
+        } catch (err) {
+          return self.destroy(err)
+        }
+        self._chunk = null
+        self._debug('sent chunk from "write before connect"')
+
+        var cb = self._cb
+        self._cb = null
+        cb(null)
       }
+
+      // If `bufferedAmountLowThreshold` and 'onbufferedamountlow' are unsupported,
+      // fallback to using setInterval to implement backpressure.
+      if (typeof self._channel.bufferedAmountLowThreshold !== 'number') {
+        self._interval = setInterval(function () { self._onInterval() }, 150)
+        if (self._interval.unref) self._interval.unref()
+      }
+
+      self._debug('connect')
+      self.emit('connect')
     })
-
-    items.forEach(function (item) {
-      // Spec-compliant
-      if (item.type === 'transport') {
-        setSelectedCandidatePair(candidatePairs[item.selectedCandidatePairId])
-      }
-
-      // Old implementations
-      if (
-        (item.type === 'googCandidatePair' && item.googActiveConnection === 'true') ||
-        ((item.type === 'candidatepair' || item.type === 'candidate-pair') && item.selected)
-      ) {
-        setSelectedCandidatePair(item)
-      }
-    })
-
-    function setSelectedCandidatePair (selectedCandidatePair) {
-      var local = localCandidates[selectedCandidatePair.localCandidateId]
-
-      if (local && local.ip) {
-        // Spec
-        self.localAddress = local.ip
-        self.localPort = Number(local.port)
-      } else if (local && local.ipAddress) {
-        // Firefox
-        self.localAddress = local.ipAddress
-        self.localPort = Number(local.portNumber)
-      } else if (typeof selectedCandidatePair.googLocalAddress === 'string') {
-        // TODO: remove this once Chrome 58 is released
-        local = selectedCandidatePair.googLocalAddress.split(':')
-        self.localAddress = local[0]
-        self.localPort = Number(local[1])
-      }
-
-      var remote = remoteCandidates[selectedCandidatePair.remoteCandidateId]
-
-      if (remote && remote.ip) {
-        // Spec
-        self.remoteAddress = remote.ip
-        self.remotePort = Number(remote.port)
-      } else if (remote && remote.ipAddress) {
-        // Firefox
-        self.remoteAddress = remote.ipAddress
-        self.remotePort = Number(remote.portNumber)
-      } else if (typeof selectedCandidatePair.googRemoteAddress === 'string') {
-        // TODO: remove this once Chrome 58 is released
-        remote = selectedCandidatePair.googRemoteAddress.split(':')
-        self.remoteAddress = remote[0]
-        self.remotePort = Number(remote[1])
-      }
-      self.remoteFamily = 'IPv4'
-
-      self._debug(
-        'connect local: %s:%s remote: %s:%s',
-        self.localAddress, self.localPort, self.remoteAddress, self.remotePort
-      )
-    }
-
-    if (self._chunk) {
-      try {
-        self.send(self._chunk)
-      } catch (err) {
-        return self._destroy(err)
-      }
-      self._chunk = null
-      self._debug('sent chunk from "write before connect"')
-
-      var cb = self._cb
-      self._cb = null
-      cb(null)
-    }
-
-    // If `bufferedAmountLowThreshold` and 'onbufferedamountlow' are unsupported,
-    // fallback to using setInterval to implement backpressure.
-    if (typeof self._channel.bufferedAmountLowThreshold !== 'number') {
-      self._interval = setInterval(function () { self._onInterval() }, 150)
-      if (self._interval.unref) self._interval.unref()
-    }
-
-    self._debug('connect')
-    self.emit('connect')
-    if (self._earlyMessage) { // HACK: Workaround for Chrome not firing "open" between tabs
-      self._onChannelMessage(self._earlyMessage)
-      self._earlyMessage = null
-    }
-  })
+  }
+  findCandidatePair()
 }
 
 Peer.prototype._onInterval = function () {
-  if (!this._cb || !this._channel || this._channel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+  var self = this
+  if (!self._cb || !self._channel || self._channel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
     return
   }
-  this._onChannelBufferedAmountLow()
+  self._onChannelBufferedAmountLow()
 }
 
 Peer.prototype._onSignalingStateChange = function () {
@@ -789,7 +795,7 @@ Peer.prototype._onChannelClose = function () {
   var self = this
   if (self.destroyed) return
   self._debug('on channel close')
-  self._destroy()
+  self.destroy()
 }
 
 Peer.prototype._onAddStream = function (event) {
