@@ -211,8 +211,8 @@ Peer.prototype._setRemoteDescription = function (data) {
   data = new (self._wrtc.RTCSessionDescription)(data)
   if (self._pc.setRemoteDescription.length <= 1) {
     self._pc.setRemoteDescription(data)
-    .then(onSuccess)
-    .catch(onError)
+      .then(onSuccess)
+      .catch(onError)
   } else {
     self._pc.setRemoteDescription(data, onSuccess, onError)
   }
@@ -238,7 +238,7 @@ Peer.prototype._addIceCandidate = function (candidate) {
   try {
     if (self._pc.addIceCandidate.length === 1) {
       self._pc.addIceCandidate(candidate)
-      .catch(onError)
+        .catch(onError)
     } else {
       self._pc.addIceCandidate(candidate, noop, onError)
     }
@@ -426,8 +426,8 @@ Peer.prototype._setLocalDescription = function (desc, callback) {
   var self = this
   if (self._pc.setLocalDescription.length <= 1) { // safari tech preview === 0
     self._pc.setLocalDescription(desc)
-    .then(onSuccess)
-    .catch(onError)
+      .then(onSuccess)
+      .catch(onError)
   } else {
     self._pc.setLocalDescription(desc, onSuccess, onError) // deprecated
   }
@@ -450,8 +450,8 @@ Peer.prototype._createOffer = function () {
   var constraints = self.offerConstraints
   if (self._pc.createOffer.length === 0) {
     self._pc.createOffer(constraints)
-    .then(onSuccess)
-    .catch(onError)
+      .then(onSuccess)
+      .catch(onError)
   } else {
     self._pc.createOffer(constraints, onSuccess, onError)
   }
@@ -483,8 +483,8 @@ Peer.prototype._createAnswer = function () {
   var constraints = self.answerConstraints
   if (self._pc.createAnswer.length === 0) {
     self._pc.createAnswer(constraints)
-    .then(onSuccess)
-    .catch(onError)
+      .then(onSuccess)
+      .catch(onError)
   } else {
     self._pc.createAnswer(onSuccess, onError, constraints)
   }
