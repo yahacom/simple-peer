@@ -11,6 +11,7 @@
     "url": "https://github.com/feross/simple-peer/issues"
   },
   "dependencies": {
+    "buffer": "^5.6.0",
     "debug": "^4.0.1",
     "get-browser-rtc": "^1.0.0",
     "queue-microtask": "^1.1.0",
@@ -22,7 +23,6 @@
     "babel-minify": "^0.5.1",
     "bowser": "^2.4.0",
     "browserify": "^16.1.0",
-    "buffer": "^5.6.0",
     "coveralls": "^3.0.9",
     "nyc": "^14.1.1",
     "prettier-bytes": "^1.0.3",
