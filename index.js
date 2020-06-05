@@ -147,6 +147,12 @@ class Peer extends stream.Duplex {
         this.addStream(stream)
       })
     }
+    this._pc.onaddstream = event => {
+      this._onAddStream(event)
+    }
+    this._pc.onremovestream = event => {
+      this._onRemoveStream(event)
+    }
     this._pc.ontrack = event => {
       this._onTrack(event)
     }
@@ -250,6 +256,8 @@ class Peer extends stream.Duplex {
   addTransceiver (kind, init) {
     this._debug('addTransceiver()')
 
+    if (!this._pc.addTransceiver) return
+
     if (this.initiator) {
       try {
         this._pc.addTransceiver(kind, init)
@@ -271,9 +279,13 @@ class Peer extends stream.Duplex {
   addStream (stream) {
     this._debug('addStream()')
 
-    stream.getTracks().forEach(track => {
-      this.addTrack(track, stream)
-    })
+    if (!this._pc.addTrack) {
+      this._pc.addStream(stream)
+    } else {
+      stream.getTracks().forEach(track => {
+        this.addTrack(track, stream)
+      })
+    }
   }
 
   /**
@@ -354,9 +366,13 @@ class Peer extends stream.Duplex {
   removeStream (stream) {
     this._debug('removeSenders()')
 
-    stream.getTracks().forEach(track => {
-      this.removeTrack(track, stream)
-    })
+    if (!this._pc.removeTrack) {
+      this._pc.removeStream(stream)
+    } else {
+      stream.getTracks().forEach(track => {
+        this.removeTrack(track, stream)
+      })
+    }
   }
 
   _needsNegotiation () {
@@ -974,6 +990,18 @@ class Peer extends stream.Duplex {
         this.emit('stream', eventStream) // ensure all tracks have been added
       })
     })
+  }
+
+  _onAddStream (event) {
+    if (this.destroyed) return
+
+    this.emit('addstream', event);
+  }
+
+  _onRemoveStream (event) {
+    if (this.destroyed) return
+
+    this.emit('removestream', event);
   }
 
   _debug () {

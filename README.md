@@ -1,18 +1,9 @@
-# simple-peer [![travis][travis-image]][travis-url] [![coveralls][coveralls-image]][coveralls-url] [![npm][npm-image]][npm-url] [![downloads][downloads-image]][downloads-url] [![javascript style guide][standard-image]][standard-url] [![javascript style guide][sauce-image]][sauce-url]
+# fork simple-peer
 
-[travis-image]: https://img.shields.io/travis/feross/simple-peer/master.svg
-[travis-url]: https://travis-ci.org/feross/simple-peer
-[coveralls-image]: https://coveralls.io/repos/github/feross/simple-peer/badge.svg?branch=master
-[coveralls-url]: https://coveralls.io/github/feross/simple-peer?branch=master
-[npm-image]: https://img.shields.io/npm/v/simple-peer.svg
-[npm-url]: https://npmjs.org/package/simple-peer
-[downloads-image]: https://img.shields.io/npm/dm/simple-peer.svg
-[downloads-url]: https://npmjs.org/package/simple-peer
-[standard-image]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
-[standard-url]: https://standardjs.com
-[sauce-image]: https://saucelabs.com/buildstatus/simple-peer
-[sauce-url]: https://saucelabs.com/u/simple-peer
-
+This fork from [jeremija/simple-peer](https://github.com/jeremija/simple-peer) 
+provides possibility to use simple-peer lib with 
+[react-native-webrtc](https://github.com/react-native-webrtc/react-native-webrtc) 
+that uses some old deprecated API, i.e. addStream, etc.
 #### Simple WebRTC video, voice, and data channels
 
 ## features
