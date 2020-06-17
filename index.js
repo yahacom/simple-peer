@@ -1,6 +1,5 @@
 var debug = require('debug')('simple-peer')
 var getBrowserRTC = require('get-browser-rtc')
-var randombytes = require('randombytes')
 var stream = require('readable-stream')
 var queueMicrotask = require('queue-microtask') // TODO: remove when Node 10 is not supported
 
@@ -36,11 +35,11 @@ class Peer extends stream.Duplex {
 
     super(opts)
 
-    this._id = randombytes(4).toString('hex').slice(0, 7)
+    this._id = 'sPeer_' + Date.now()
     this._debug('new peer %o', opts)
 
     this.channelName = opts.initiator
-      ? opts.channelName || randombytes(20).toString('hex')
+      ? opts.channelName || 'sPeerCh_' + Date.now()
       : null
 
     this.initiator = opts.initiator || false
