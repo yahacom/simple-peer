@@ -132,21 +132,15 @@ class Peer extends stream.Duplex {
     // - onfingerprintfailure
     // - onnegotiationneeded
 
-    // This added because react-native-webrtc not provide ondatachannel event.
-    // So data channel will be setup every time when new peer connection create.
-    this._setupData({
-      channel: this._pc.createDataChannel(this.channelName, this.channelConfig)
-    })
-
-    // if (this.initiator || this.negotiated) {
-    //   this._setupData({
-    //     channel: this._pc.createDataChannel(this.channelName, this.channelConfig)
-    //   })
-    // } else {
-    //   this._pc.ondatachannel = event => {
-    //     this._setupData(event)
-    //   }
-    // }
+    if (this.initiator || this.negotiated) {
+      this._setupData({
+        channel: this._pc.createDataChannel(this.channelName, this.channelConfig)
+      })
+    } else {
+      this._pc.ondatachannel = event => {
+        this._setupData(event)
+      }
+    }
 
     if (this.streams) {
       this.streams.forEach(stream => {
